@@ -1,105 +1,65 @@
 ###
 ### Start again from here
 ###
-import itertools
 
+# Standard imports
 import numpy as np
+
+# Specialized imports
 import scipy.sparse as sp
-from itertools import product, chain, combinations, islice
+import itertools
+import time
 import pdb
 
-# # Define useful quantities
-# x_triv = np.array([1])
-#
-# x_ohe_A = np.array([1, 0, 0, 0])
-# x_ohe_C = np.array([0, 1, 0, 0])
-# x_ohe_G = np.array([0, 0, 1, 0])
-# x_ohe_T = np.array([0, 0, 0, 1])
-#
-# char_to_ohe_dict = {
-#     'A': x_ohe_A,
-#     'C': x_ohe_C,
-#     'G': x_ohe_G,
-#     'T': x_ohe_T
-# }
-#
-# x_sim_A = np.array([1, 0, 0])
-# x_sim_C = np.array([0, 1, 0])
-# x_sim_G = np.array([0, 0, 1])
-# x_sim_T = np.array([-1, -1, -1])
-#
-# char_to_sim_dict = {
-#     'A': x_sim_A,
-#     'C': x_sim_C,
-#     'G': x_sim_G,
-#     'T': x_sim_T
-# }
-#
-# # Trivial matrix
-# T_triv = sp.csr_array([[1]])
-#
-# T_ohe = sp.csr_array([
-#     [1, 1, 1, 1],
-#     [1, 0, 0, -1],
-#     [0, 1, 0, -1],
-#     [0, 0, 1, -1]
-# ])
-# T_ohe_inv = sp.csr_matrix(np.linalg.inv(T_ohe.todense()))
 
-def make_all_seqs(L, max_num_seqs=1000):
-    iterable = product(['A','C','G','T'], repeat=L)
-    return [''.join(x) for x in islice(iterable, max_num_seqs)]
+def make_all_seqs(L, alphabet='ACGT', max_num_seqs=1000):
+    """
+    Creates all sequences of a given length from a given alphabet up to some
+    maximum number.
+    :param L: (int > 0)
+        Sequence length.
+    :param alphabet: (iterable over chars)
+        Alphabet from which to generate sequences.
+    :param max_num_seqs: (int > 0)
+        Maximum number of sequences to generate.
+    :return:
+        List of generated sequences.
+    """
+    alphabet_list = list(alphabet)
+    iterable = itertools.product(alphabet_list, repeat=L)
+    return [''.join(seq) for seq in itertools.islice(iterable, max_num_seqs)]
 
-def make_random_seqs(L, N, alphabet='ACGT'):
+
+def make_random_seqs(L, num_seqs, alphabet='ACGT'):
+    """
+    Creates a given number of random sequences.
+    :param L: (int > 0)
+        Sequence length.
+    :param num_seqs: (int > 0)
+        Number of sequences to generate.
+    :param alphabet: (iterable over chars)
+        Alphabet from which to generate sequences.
+    :return:
+        List of generated sequences.
+    """
     return [''.join(row) for row in
-            np.random.choice(a=list(alphabet), size=[N,L])]
+            np.random.choice(a=list(alphabet), size=[num_seqs, L])]
 
-# def L_to_spec_str_constant():
-#     return '.'
-#
-# def L_to_spec_str_additive(L):
-#     parts = []
-#     parts.append(L_to_spec_str_constant())
-#     for i in range(L):
-#         parts.append(f'{i:d}')
-#     return '+'.join(parts)
-#
-# def L_to_spec_str_neighbor(L):
-#     parts = []
-#     parts.append(L_to_spec_str_additive(L))
-#     for i in range(L-1):
-#         parts.append(f'{i:d}x{i+1:d}')
-#     return '+'.join(parts)
-#
-# def L_to_spec_str_pairwise(L):
-#     parts = []
-#     parts.append(L_to_spec_str_additive(L))
-#     for i in range(L-1):
-#         for j in range(i+1,L):
-#             parts.append(f'{i:d}x{j:d}')
-#     return '+'.join(parts)
-#
-# def L_to_spec_str_3adjacent(L):
-#     parts = []
-#     parts.append(L_to_spec_str_neighbor(L))
-#     for i in range(L-2):
-#         parts.append(f'{i:d}x{i+1:d}x{i+2}')
-#     return '+'.join(parts)
-#
-# def L_to_spec_str_3order(L):
-#     parts = []
-#     parts.append(L_to_spec_str_pairwise(L))
-#     for i in range(L-2):
-#         for j in range(i+1,L-1):
-#             for k in range(j+1,L):
-#                 parts.append(f'{i:d}x{j:d}x{k:d}')
-#     return '+'.join(parts)
 
-def seq_to_x_ohe(seq, ohe_spec_str, alphabet='ACGT', sparse=True):
-    '''
-    inputs: seq (DNA), ohe_spec_str
-    returns: x, a one-hot encoding
-    '''
+def seq_to_x_ohe_old(seq, ohe_spec_str, alphabet='ACGT', sparse=True):
+    """
+    Creates a one-hot encoding of a sequence.
+    :param seq: (str)
+        Sequence to encode.
+    :param ohe_spec_str:
+        Specification string for one-hot encoding.
+    :param alphabet: (iterable over chars)
+        Alphabet to use for the one-hot encoding.
+    :param sparse: (bool)
+        Whether to return a sparse matrix or a numpy array.
+    :return:
+        One-hot encoding of the provided sequence
+    """
     L = len(seq)
     x_components = []
 
@@ -127,19 +87,77 @@ def seq_to_x_ohe(seq, ohe_spec_str, alphabet='ACGT', sparse=True):
     #pdb.set_trace()
     x = sp.hstack(x_components, format='csr').T
 
+    # If sparse matrix is not wanted, return a dense numpy array.
     if not sparse:
         x = x.todense()
 
     return x
 
+import pdb
 
-def ohe_spec_to_T(ohe_spec_str, alpha=4, compute_inv=False):
+
+def seq_to_x_ohe(seq, ohe_spec, alphabet):
+    """
+    Creates a one-hot encoding of a sequence. Much faster than seq_to_x_sim.
+    :param seq: (str)
+        Sequence to encode.
+    :param ohe_spec:
+        Specification string for one-hot encoding.
+    :param alphabet: (iterable over chars)
+        Alphabet to use for the one-hot encoding.
+    :param sparse: (bool)
+        Whether to return a sparse matrix or a numpy array.
+    :return:
+        Sparse one-hot encoding of the provided sequence
+    """
+
+    alpha = len(alphabet)
+
+    # First, convert sequence to list of character indices
+    char_to_ix_dict = dict([(c, i) for i, c in enumerate(alphabet)])
+    ixs = [char_to_ix_dict[c] for c in seq]
+
+    # Create lisst of indices for ones, one one for each part
+    parts = ohe_spec.split('+')
+    num_parts = len(parts)
+    offset = 0
+    ixs = np.zeros(shape=num_parts, dtype=np.int64)
+    for part_num, part in enumerate(parts):
+        if part == '.':
+            relative_ix = 0
+            m = 1
+        else:
+            poss = [np.int64(pos_str) for pos_str in part.split('x')]
+            num_poss = len(poss)
+            chars = [seq[pos] for pos in poss]
+            relative_ix = sum(
+                #[(alpha ** (num_poss - 1 - i)) * char_to_ix_dict[c] for i, c in
+                [(alpha ** i) * char_to_ix_dict[c] for i, c in
+                 enumerate(chars)])
+            m = alpha ** num_poss
+        ixs[part_num] = offset + relative_ix
+        offset += m
+
+    # Get dimenion of matrix
+    M = offset
+
+    # Create sparse column matrix
+    data = num_parts * [1]
+    i_vals = ixs
+    j_vals = num_parts * [0]
+
+    # pdb.set_trace()
+    x = sp.coo_array((data, (i_vals, j_vals)), shape=(M, 1)).tocsc()
+
+    return x
+
+def _ohe_spec_to_T(ohe_spec_str, alpha=4, compute_inv=False):
     '''
-    input: ohe_spec_str
+    input: ohe_spec
     output: T (s.t. T x = x_factored)
     '''
 
-    # Split ohe_spec_str into parts
+    # Split ohe_spec into parts
     parts = ohe_spec_str.split('+')
 
     # Get maximum order
@@ -150,7 +168,7 @@ def ohe_spec_to_T(ohe_spec_str, alpha=4, compute_inv=False):
     T_triv = sp.csr_array([[1]])
 
     if not compute_inv:
-        T_ohe_inv = sp.csr_matrix(np.zeros(shape=(alpha-1,alpha-1)))
+       T_ohe_inv = sp.csr_matrix(np.zeros(shape=(alpha-1,alpha-1)))
 
     # Build blocks for order up to maximum order
     order_to_block_dict = {}
@@ -174,91 +192,20 @@ def ohe_spec_to_T(ohe_spec_str, alpha=4, compute_inv=False):
         diag_mats_inv.append(T_part_inv)
 
     T = sp.block_diag(diag_mats, format='csr')
-    T_inv = sp.block_diag(diag_mats_inv, format='csr')
-
     if compute_inv:
-        return T, T_inv
+        T_inv = sp.block_diag(diag_mats_inv, format='csr')
     else:
-        return T
+        T_inv = None
 
-# ### Define and test ohe_spec_to_T function
-# def ohe_spec_to_T(ohe_spec_str, alpha=4):
-#     '''
-#     input: ohe_spec_str
-#     output: T (s.t. T x = x_factored)
-#     '''
-#     parts = ohe_spec_str.split('+')
-#     diag_mats = []
-#     diag_mats_inv = []
-#
-#     T_triv = sp.csr_array([[1]])
-#     T_ohe, T_ohe_inv = get_single_position_T_and_T_inv(alpha=alpha)
-#
-#     for part in parts:
-#         if part == '.':
-#             T_part = T_triv
-#             T_part_inv = T_triv
-#         else:
-#             #bits = part.split('x')
-#             T_part = T_triv
-#             T_part_inv = T_triv
-#             for bit in part.split('x'):
-#                 m = T_part.shape[0]
-#
-#                 # Compute kronecker product
-#                 T_part = sp.kron(T_part, T_ohe)
-#                 T_part_inv = sp.kron(T_ohe_inv,T_part_inv)
-#         diag_mats.append(T_part)
-#         diag_mats_inv.append(T_part_inv)
-#     T = sp.block_diag(diag_mats, format='csr')
-#     T_inv = sp.block_diag(diag_mats_inv, format='csr')
-#     return T, T_inv
+    return T, T_inv
 
-### Define and test ohe_spec_to_T function
-# def ohe_spec_to_B(ohe_spec_str, alpha=4):
-#     '''
-#     input: ohe_spec_str
-#     output: T (s.t. T x = x_factored)
-#     '''
-#     parts = ohe_spec_str.split('+')
-#     diag_mats = []
-#     diag_mats_inv = []
-#     I_triv = np.eye(1, dtype=np.int64)
-#     I_ohe = np.eye(alpha, dtype=np.int64)
-#     for part in parts:
-#         if part == '.':
-#             B_part = I_triv
-#             B_part_inv = I_triv
-#         else:
-#             bits = part.split('x')
-#             B_part = I_triv
-#             B_part_inv = I_triv
-#             for bit in part.split('x'):
-#                 m = B_part.shape[0]
-#
-#                 # Compute kronecker product
-#                 B_part = sp.kron(B_part, I_ohe)
-#                 B_part_inv = sp.kron(B_part_inv, I_ohe)
-#
-#                 # Fix up row orderd (# Is this where this goes?)
-#                 i_vals = list(range(m*alpha))
-#                 j_vals = [alpha*i for i in range(m)] + [i-m+1+(i-m)//(alpha-1) for i in range(m,m*alpha)]
-#                 data = m*alpha*[1]
-#                 new_B = sp.coo_array((data, (i_vals, j_vals)), shape=(alpha*m,alpha*m)).tocsr()
-#                 B_part = new_B@B_part
-#                 B_part_inv = B_part_inv@(new_B.T)
-#         diag_mats.append(B_part)
-#         diag_mats_inv.append(B_part_inv)
-#     B = sp.block_diag(diag_mats, format='csr')
-#     B_inv = sp.block_diag(diag_mats_inv, format='csr')
-#     return B, B_inv
 
-def ohe_spec_to_B(ohe_spec_str, alpha=4):
+def _ohe_spec_to_B(ohe_spec_str, alpha=4):
     '''
-    input: ohe_spec_str
-    output: T (s.t. T x = x_factored)
+    input: ohe_spec
+    output: B (s.t. T x = x_factored)
     '''
-    # Split ohe_spec_str into parts
+    # Split ohe_spec into parts
     parts = ohe_spec_str.split('+')
 
     # Get maximum order
@@ -305,6 +252,7 @@ def ohe_spec_to_B(ohe_spec_str, alpha=4):
     B_inv = sp.block_diag(diag_mats_inv, format='csr')
 
     return B, B_inv
+
 
 def my_expand(x):
     """
@@ -364,47 +312,8 @@ def get_shifts_and_sizes(spec_str, encoding_size):
     M = shift
     return specs, M
 
-# TODO: Fix this function. I'm getting duplicate offsets.
-# Should instead define A as coo anyway.
-# def get_thinning_matrix(sim_spec_str, alpha=4):
-#     # Build zeroing-out matrix
-#     component_dict = {}
-#     diag_vecs = []
-#     inv_diag_vecs = []
-#     diag_offsets = []
-#
-#     # Get specs list
-#     specs, M = get_shifts_and_sizes(sim_spec_str, encoding_size=alpha-1)
-#
-#     # Add in main diagonal
-#     diag_vecs.append(M * [1])
-#     inv_diag_vecs.append(M * [1])
-#     diag_offsets.append(0)
-#     for spec in specs:
-#         key = spec[0]
-#         m = spec[1]
-#         offset = spec[2]
-#         if key not in component_dict:
-#             component_dict[key] = (m, offset)
-#         else:
-#             m1, offset1 = component_dict[key]
-#             try:
-#                 assert m1 == m
-#             except:
-#                 print('m1:', m1)
-#                 print('m:', m)
-#                 pdb.set_trace()
-#             diag_vec = offset1 * [0] + m * [-1] + (M - (offset + m)) * [0]
-#             inv_diag_vec = offset1 * [0] + m * [1] + (M - (offset + m)) * [0]
-#             diag_offset = -(offset - offset1)
-#             diag_vecs.append(diag_vec)
-#             inv_diag_vecs.append(inv_diag_vec)
-#             diag_offsets.append(diag_offset)
-#     A = sp.diags(diag_vecs, diag_offsets)
-#     A_inv = sp.diags(inv_diag_vecs, diag_offsets)
-#     return A, A_inv
 
-def get_thinning_matrix(sim_spec_str, alpha=4):
+def _get_thinning_matrix(sim_spec_str, alpha=4):
     # Build zeroing-out matrix
     component_dict = {}
     diag_vecs = []
@@ -443,6 +352,7 @@ def get_thinning_matrix(sim_spec_str, alpha=4):
     A_inv = sp.coo_array((data_inv, (i_vals, j_vals)), shape=(M, M)).tocsr()
     return A, A_inv
 
+
 def get_x_to_test_thinning_matrix(sim_spec_str, alpha=4):
     """
     input: sim_spec_str
@@ -479,7 +389,7 @@ def get_x_to_test_thinning_matrix(sim_spec_str, alpha=4):
 
 def seq_to_desired_BTx(seq, sim_spec_str, alphabet='ACGT'):
     '''
-    inputs: seq, ohe_spec_str, alphabet
+    inputs: seq, ohe_spec, alphabet
     returns: x, a one-hot encoding
     '''
     L = len(seq)
@@ -509,7 +419,7 @@ def seq_to_desired_BTx(seq, sim_spec_str, alphabet='ACGT'):
     return x
 
 
-def get_distilling_matrix(sim_spec_str, alpha=4):
+def _get_distilling_matrix(sim_spec_str, alpha=4):
     # Get specs list
     specs, M = get_shifts_and_sizes(sim_spec_str, encoding_size=alpha-1)
 
@@ -547,16 +457,22 @@ def get_distilling_matrix(sim_spec_str, alpha=4):
 def powerset(iterable):
     "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
     s = list(iterable)
-    return chain.from_iterable(combinations(s, r) for r in range(len(s) + 1))
+    return itertools.chain.from_iterable(
+        itertools.combinations(s, r) for r in range(len(s) + 1)
+    )
 
 
 def get_ohe_spec_str(L, n_order, n_adj=None):
     """
-    Function to get ohe_spec_str for any order and num adjacent
-    :param L: Length of sequence (int > 0)
-    :param n_order: Highest order of interaction (int >= 0)
-    :param n_adj: Maximum span of interaction across positions (int >= 0)
-    :return: ohe_spec_str: String specification of one-hot encoding
+    Function to get ohe_spec for any order and num adjacent.
+    :param L: (int > 0)
+        Length of sequence.
+    :param n_order: (int >= 0)
+        Highest order of interaction.
+    :param n_adj: (int >= 0)
+        Maximum span of interaction across positions.
+    :return: ohe_spec
+        String specification of one-hot encoding.
     """
 
     # If n_adj is not specified, assume use L
@@ -577,7 +493,6 @@ def get_ohe_spec_str(L, n_order, n_adj=None):
 
     return spec_seq
 
-#TODO: Generalize everything over multiple alpha
 
 def get_char_to_ohe_dict(alphabet):
     # Make sure all characters in alphabet are unique
@@ -618,3 +533,135 @@ def get_single_position_T_and_T_inv(alpha=4):
     T_inv = (1 / alpha) * np.concatenate([M_left, M_right], axis=1)
 
     return sp.csr_array(T), sp.csr_array(T_inv)
+
+
+def compute_T(ohe_spec,
+              alpha,
+              compute_T_inv=True,
+              verbose=True,
+              get_other_info=True):
+    """
+    Computes the T matrix, as well as other distillation info
+    :param ohe_spec: (str)
+        One-hot encoding specification.
+    :param alpha: (int >= 2)
+        Size of alphabet.
+    :param compute_T_inv: (bool)
+        Whether to compute the inverse of T (adds some time). Returned as part
+        of info_dict; need to set get_other_info=True to get this.
+    :param verbose:
+        Whether to print updates to computation.
+    :param get_other_info: (bool)
+        Whether to return info_dict as well
+    :return:
+        T: (sparse matrix) Distillation matrix.
+        info_dict: (optional) dict containing other results.
+    """
+
+    # Define container class for results
+    info_dict = {}
+    timing_dict = {}
+
+    start_time = time.perf_counter()
+
+    # Get transformation matrix
+    if verbose:
+        print('_ohe_spec_to_U...')
+    t0 = time.perf_counter()
+    U, U_inv = _ohe_spec_to_T(ohe_spec, alpha=alpha, compute_inv=compute_T_inv)
+    timing_dict['_ohe_spec_to_U'] = time.perf_counter() - t0
+
+    # Get reordering matrix
+    if verbose:
+        print('_ohe_spec_to_B...')
+    t0 = time.perf_counter()
+    B, B_inv = _ohe_spec_to_B(ohe_spec, alpha=alpha)
+    timing_dict['_ohe_spec_to_B'] = time.perf_counter() - t0
+
+    # Get sim_spec
+    if verbose:
+        print('ohe_to_sim_spec...')
+    t0 = time.perf_counter()
+    sim_spec = ohe_to_sim_spec(ohe_spec)
+    timing_dict['ohe_to_sim_spec'] = time.perf_counter() - t0
+
+    # Get thinning matrix
+    if verbose:
+        print('_get_thinning_matrix...')
+    t0 = time.perf_counter()
+    A, A_inv = _get_thinning_matrix(sim_spec, alpha=alpha)
+    timing_dict['_get_thinning_matrix'] = time.perf_counter() - t0
+
+    # Get distilling matrix
+    if verbose:
+        print('_get_distilling_matrix...')
+    t0 = time.perf_counter()
+    D, D_inv, gamma = _get_distilling_matrix(sim_spec, alpha=alpha)
+    timing_dict['_get_distilling_matrix'] = time.perf_counter() - t0
+
+    # Get gauge basis
+    if verbose:
+        print('T computation...')
+    t0 = time.perf_counter()
+    T = D @ A @ B @ U
+    timing_dict["T computation"] = time.perf_counter() - t0
+
+    if compute_T_inv:
+        if verbose:
+            print('T_inv computation...')
+        t0 = time.perf_counter()
+        T_inv = U_inv @ B_inv @ A_inv @ D_inv
+        timing_dict["T_inv computation"] = time.perf_counter() - t0
+    else:
+        T_inv = None
+
+    # Compute gauge bassis
+    G_basis = T[-gamma:, :].T
+
+    # Objects of interest:
+    if verbose:
+        obj_dict = {
+                     '      U':U,
+                     '  U_inv':U_inv,
+                     '      A':A,
+                     '      B':B,
+                     '      D':D,
+                     '      T':T,
+                     'G_basis':G_basis}
+        M = T.shape[0]
+        for key, val in obj_dict.items():
+            size = val.data.nbytes
+            pct = 100*size/(M*M)
+            print(f"\t{key}: {size:10,d} bytes, {pct:.3f}% dense.")
+
+    # Gather up other info
+    info_dict['T'] = T
+    info_dict['gamma'] = gamma
+    info_dict['M'] = T.shape[0]
+    info_dict['alpha'] = alpha
+    info_dict['ohe_spec'] = ohe_spec
+    if compute_T_inv:
+        info_dict['T_inv'] = T_inv
+    info_dict['timing_dict'] = timing_dict
+    info_dict['G_basis'] = G_basis
+    info_dict['sparse_intermediates'] = {
+        'U':U,
+        'A':A,
+        'B':B,
+        'D':D
+    }
+
+    elapsed_time = time.perf_counter() - start_time
+
+    if verbose:
+        print(f'alpha: {alpha:10,d}')
+        print(f'    M: {M:10,d}')
+        print(f'gamma: {gamma:10,d}')
+
+    print(f'Time for computation to complete: {elapsed_time:.3f} sec.')
+
+    if get_other_info:
+        return T, info_dict
+    else:
+        return T
+
