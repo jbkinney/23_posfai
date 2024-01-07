@@ -1,6 +1,6 @@
 # Test whole pipeline
 import numpy as np
-import posfai2 as my
+import posfai2_fixed as my
 import time
 import sys
 

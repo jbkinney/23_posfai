@@ -51,54 +51,7 @@ def make_random_seqs(L, num_seqs, alphabet='ACGT'):
             np.random.choice(a=list(alphabet), size=[num_seqs, L])]
 
 
-# def seq_to_x_ohe_old(seq, ohe_spec_str, alphabet='ACGT', sparse=True):
-#     """
-#     Creates a one-hot encoding of a sequence.
-#     :param seq: (str)
-#         Sequence to encode.
-#     :param ohe_spec_str:
-#         Specification string for one-hot encoding.
-#     :param alphabet: (iterable over chars)
-#         Alphabet to use for the one-hot encoding.
-#     :param sparse: (bool)
-#         Whether to return a sparse matrix or a numpy array.
-#     :return:
-#         One-hot encoding of the provided sequence
-#     """
-#     L = len(seq)
-#     x_components = []
-#
-#     x_triv = sp.coo_array([1])
-#     char_to_ohe_dict = get_char_to_ohe_dict(alphabet=alphabet)
-#
-#     ohe_spec_str_parts = ohe_spec_str.split('+')
-#     for part in ohe_spec_str_parts:
-#
-#         # Add in trivial component
-#         if part == '.':
-#             x_components.append(x_triv)
-#         else:
-#             positions = [int(p) for p in part.split('x')]
-#             assert len(positions) > 0
-#             x_irr = x_triv
-#             while len(positions) > 0:
-#                 pos = positions.pop(-1)
-#                 c = seq[pos]
-#                 x_l = sp.coo_array(char_to_ohe_dict[c])
-#                 x_irr = sp.kron(x_irr, x_l, format='coo')
-#             x_components.append(x_irr)
-#
-#     # Create x
-#     x = sp.hstack(x_components, format='csr').T
-#
-#     # If sparse matrix is not wanted, return a dense numpy array.
-#     if not sparse:
-#         x = x.todense()
-#
-#     return x
-#
-
-def seq_to_x_ohe(seq, ohe_spec, alphabet):
+def seq_to_x_ohe(seq, ohe_spec, alphabet, fix=False):
     """
     Creates a one-hot encoding of a sequence. Much faster than seq_to_x_sim.
     :param seq: (str)
@@ -132,10 +85,14 @@ def seq_to_x_ohe(seq, ohe_spec, alphabet):
             poss = [np.int64(pos_str) for pos_str in part.split('x')]
             num_poss = len(poss)
             chars = [seq[pos] for pos in poss]
-            relative_ix = sum(
-                #[(alpha ** (num_poss - 1 - i)) * char_to_ix_dict[c] for i, c in
-                [(alpha ** i) * char_to_ix_dict[c] for i, c in
-                 enumerate(chars)])
+            if fix:
+                relative_ix = sum(
+                    [(alpha ** (num_poss - 1 - i)) * char_to_ix_dict[c] for i, c in
+                     enumerate(chars)])
+            else:
+                relative_ix = sum(
+                    [(alpha ** i) * char_to_ix_dict[c] for i, c in
+                    enumerate(chars)])
             m = alpha ** num_poss
         ixs[part_num] = offset + relative_ix
         offset += m
@@ -315,7 +272,13 @@ def get_shifts_and_sizes(spec_str, encoding_size):
     return specs, M
 
 
-def _get_thinning_matrix(sim_spec_str, alpha=4):
+def _get_thinning_matrix(ohe_spec_str, alpha=4, fix=False):
+
+    if fix:
+        ohe_spec_str = flip_parts_in_spec_str(ohe_spec_str)
+
+    sim_spec_str = ohe_to_sim_spec(ohe_spec_str)
+
     # Build zeroing-out matrix
     component_dict = {}
     diag_vecs = []
@@ -355,11 +318,14 @@ def _get_thinning_matrix(sim_spec_str, alpha=4):
     return A, A_inv
 
 
-def get_x_to_test_thinning_matrix(sim_spec_str, alpha=4):
+def get_x_to_test_thinning_matrix(ohe_spec_str, alpha=4):
     """
     input: sim_spec_str
     return: x_test
     """
+
+    sim_spec_str = ohe_to_sim_spec(ohe_spec_str)
+
     # Get shifts and sizes
     specs, M = get_shifts_and_sizes(sim_spec_str, encoding_size=alpha-1)
 
@@ -389,11 +355,16 @@ def get_x_to_test_thinning_matrix(sim_spec_str, alpha=4):
     return x_test
 
 
-def seq_to_desired_BTx(seq, sim_spec_str, alphabet='ACGT'):
+def seq_to_desired_BTx(seq, ohe_spec_str, alphabet='ACGT', fix=False):
     '''
     inputs: seq, ohe_spec, alphabet
     returns: x, a one-hot encoding
     '''
+
+    if fix:
+        ohe_spec_str = flip_parts_in_spec_str(ohe_spec_str)
+    sim_spec_str = ohe_to_sim_spec(ohe_spec_str)
+
     L = len(seq)
     x_components = []
     x_triv = np.array([1])
@@ -421,7 +392,13 @@ def seq_to_desired_BTx(seq, sim_spec_str, alphabet='ACGT'):
     return x
 
 
-def _get_distilling_matrix(sim_spec_str, alpha=4):
+def _get_distilling_matrix(ohe_spec_str, alpha=4, fix=False):
+
+    if fix:
+        ohe_spec_str = flip_parts_in_spec_str(ohe_spec_str)
+
+    sim_spec_str = ohe_to_sim_spec(ohe_spec_str)
+
     # Get specs list
     specs, M = get_shifts_and_sizes(sim_spec_str, encoding_size=alpha-1)
 
@@ -492,10 +469,6 @@ def get_ohe_spec_str(L, n_order, n_adj=None):
     its = sorted(set(its), key=lambda x: (len(x), *x))
     its = [[f'{i:d}' for i in it] for it in its]
     spec_str = '.' + '+'.join(['x'.join(it) for it in its])
-
-    # TODO: Fix so that this call is not needed
-    # Flip parts
-    spec_str = flip_parts_in_spec_str(spec_str)
 
     return spec_str
 
