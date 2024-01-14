@@ -10,6 +10,7 @@ import scipy.sparse as sp
 import itertools
 import time
 import pdb
+import matplotlib.pyplot as plt
 
 # This is needed to fix tensor product order error throughout
 def flip_parts_in_spec_str(spec_str):
@@ -51,53 +52,6 @@ def make_random_seqs(L, num_seqs, alphabet='ACGT'):
             np.random.choice(a=list(alphabet), size=[num_seqs, L])]
 
 
-# def seq_to_x_ohe_old(seq, ohe_spec_str, alphabet='ACGT', sparse=True):
-#     """
-#     Creates a one-hot encoding of a sequence.
-#     :param seq: (str)
-#         Sequence to encode.
-#     :param ohe_spec_str:
-#         Specification string for one-hot encoding.
-#     :param alphabet: (iterable over chars)
-#         Alphabet to use for the one-hot encoding.
-#     :param sparse: (bool)
-#         Whether to return a sparse matrix or a numpy array.
-#     :return:
-#         One-hot encoding of the provided sequence
-#     """
-#     L = len(seq)
-#     x_components = []
-#
-#     x_triv = sp.coo_array([1])
-#     char_to_ohe_dict = get_char_to_ohe_dict(alphabet=alphabet)
-#
-#     ohe_spec_str_parts = ohe_spec_str.split('+')
-#     for part in ohe_spec_str_parts:
-#
-#         # Add in trivial component
-#         if part == '.':
-#             x_components.append(x_triv)
-#         else:
-#             positions = [int(p) for p in part.split('x')]
-#             assert len(positions) > 0
-#             x_irr = x_triv
-#             while len(positions) > 0:
-#                 pos = positions.pop(-1)
-#                 c = seq[pos]
-#                 x_l = sp.coo_array(char_to_ohe_dict[c])
-#                 x_irr = sp.kron(x_irr, x_l, format='coo')
-#             x_components.append(x_irr)
-#
-#     # Create x
-#     x = sp.hstack(x_components, format='csr').T
-#
-#     # If sparse matrix is not wanted, return a dense numpy array.
-#     if not sparse:
-#         x = x.todense()
-#
-#     return x
-#
-
 def seq_to_x_ohe(seq, ohe_spec, alphabet):
     """
     Creates a one-hot encoding of a sequence. Much faster than seq_to_x_sim.
@@ -133,8 +87,7 @@ def seq_to_x_ohe(seq, ohe_spec, alphabet):
             num_poss = len(poss)
             chars = [seq[pos] for pos in poss]
             relative_ix = sum(
-                #[(alpha ** (num_poss - 1 - i)) * char_to_ix_dict[c] for i, c in
-                [(alpha ** i) * char_to_ix_dict[c] for i, c in
+                [(alpha ** (num_poss - 1 - i)) * char_to_ix_dict[c] for i, c in
                  enumerate(chars)])
             m = alpha ** num_poss
         ixs[part_num] = offset + relative_ix
@@ -153,10 +106,114 @@ def seq_to_x_ohe(seq, ohe_spec, alphabet):
 
     return x
 
-def _ohe_spec_to_T(ohe_spec_str, alpha=4, compute_inv=False):
+
+# def _ohe_spec_to_T(ohe_spec_str, alpha=4, compute_inv=False):
+#     '''
+#     input: ohe_spec
+#     output: T (s.t. T x = x_factored)
+#     '''
+#
+#     # Split ohe_spec into parts
+#     parts = ohe_spec_str.split('+')
+#
+#     # Get maximum order
+#     max_order = np.max([len(part.split('x')) for part in parts])
+#
+#     # Get single-position T blocks
+#     T_ohe, T_ohe_inv = get_single_position_T_and_T_inv(alpha=alpha)
+#     T_triv = sp.csr_array([[1]])
+#
+#     if not compute_inv:
+#        T_ohe_inv = sp.csr_matrix(np.zeros(shape=(alpha-1,alpha-1)))
+#
+#     # Build blocks for order up to maximum order
+#     order_to_block_dict = {}
+#     T_part = T_triv
+#     T_part_inv = T_triv
+#     for k in range(max_order + 1):
+#         order_to_block_dict[k] = (T_part.copy(), T_part_inv.copy())
+#         T_part = sp.kron(T_part, T_ohe)
+#         T_part_inv = sp.kron(T_ohe_inv, T_part_inv)
+#
+#     # Build block matrix
+#     diag_mats = []
+#     diag_mats_inv = []
+#     for part in parts:
+#         if part == '.':
+#             order = 0
+#         else:
+#             order = len(part.split('x'))
+#         T_part, T_part_inv = order_to_block_dict[order]
+#         diag_mats.append(T_part)
+#         diag_mats_inv.append(T_part_inv)
+#
+#     T = sp.block_diag(diag_mats, format='csr')
+#     if compute_inv:
+#         T_inv = sp.block_diag(diag_mats_inv, format='csr')
+#     else:
+#         T_inv = None
+#
+#     return T, T_inv
+#
+#
+# def _ohe_spec_to_B(ohe_spec_str, alpha=4):
+#     '''
+#     input: ohe_spec
+#     output: B (s.t. T x = x_factored)
+#     '''
+#     # Split ohe_spec into parts
+#     parts = ohe_spec_str.split('+')
+#
+#     # Get maximum order
+#     max_order = np.max([len(part.split('x')) for part in parts])
+#
+#     # Build blocks for order up to maximum order
+#     I_triv = sp.eye(1, dtype=np.int64)
+#     I_ohe = sp.eye(alpha, dtype=np.int64)
+#
+#     order_to_block_dict = {}
+#     B_part = I_triv
+#     B_part_inv = I_triv
+#     for k in range(max_order + 1):
+#         order_to_block_dict[k] = (B_part.copy(), B_part_inv.copy())
+#
+#         # Fix up row order
+#         m = alpha ** k
+#         B_part = sp.kron(B_part, I_ohe)
+#         B_part_inv = sp.kron(B_part_inv, I_ohe)
+#
+#         i_vals = list(range(m * alpha))
+#         j_vals = [alpha * i for i in range(m)] + [
+#             i - m + 1 + (i - m) // (alpha - 1) for i in range(m, m * alpha)]
+#         data = m * alpha * [1]
+#         new_B = sp.coo_array((data, (i_vals, j_vals)),
+#                              shape=(alpha * m, alpha * m)).tocsr()
+#         # pdb.set_trace()
+#         B_part = new_B @ B_part
+#         B_part_inv = B_part_inv @ (new_B.T)
+#
+#     # Build block matrix
+#     diag_mats = []
+#     diag_mats_inv = []
+#     for part in parts:
+#         if part == '.':
+#             order = 0
+#         else:
+#             order = len(part.split('x'))
+#         B_part, B_part_inv = order_to_block_dict[order]
+#         diag_mats.append(B_part)
+#         diag_mats_inv.append(B_part_inv)
+#
+#     B = sp.block_diag(diag_mats, format='csr')
+#     B_inv = sp.block_diag(diag_mats_inv, format='csr')
+#
+#     return B, B_inv
+
+
+def _ohe_spec_to_BU(ohe_spec_str, alpha=4, compute_inv=False):
     '''
     input: ohe_spec
-    output: T (s.t. T x = x_factored)
+    output: BU (s.t. BU x = x_factored)
     '''
 
     # Split ohe_spec into parts
@@ -166,68 +223,19 @@ def _ohe_spec_to_T(ohe_spec_str, alpha=4, compute_inv=False):
     max_order = np.max([len(part.split('x')) for part in parts])
 
     # Get single-position T blocks
-    T_ohe, T_ohe_inv = get_single_position_T_and_T_inv(alpha=alpha)
-    T_triv = sp.csr_array([[1]])
-
+    U_ohe, U_ohe_inv = get_single_position_T_and_T_inv(alpha=alpha)
     if not compute_inv:
-       T_ohe_inv = sp.csr_matrix(np.zeros(shape=(alpha-1,alpha-1)))
+       U_ohe_inv = sp.csr_matrix(np.zeros(shape=(alpha-1,alpha-1)))
 
     # Build blocks for order up to maximum order
     order_to_block_dict = {}
-    T_part = T_triv
-    T_part_inv = T_triv
+    BU_triv = sp.csr_array([[1]])
+    BU_part = BU_triv
+    BU_part_inv = BU_triv
     for k in range(max_order + 1):
-        order_to_block_dict[k] = (T_part.copy(), T_part_inv.copy())
-        T_part = sp.kron(T_part, T_ohe)
-        T_part_inv = sp.kron(T_ohe_inv, T_part_inv)
+        order_to_block_dict[k] = (BU_part.copy(), BU_part_inv.copy())
 
-    # Build block matrix
-    diag_mats = []
-    diag_mats_inv = []
-    for part in parts:
-        if part == '.':
-            order = 0
-        else:
-            order = len(part.split('x'))
-        T_part, T_part_inv = order_to_block_dict[order]
-        diag_mats.append(T_part)
-        diag_mats_inv.append(T_part_inv)
-
-    T = sp.block_diag(diag_mats, format='csr')
-    if compute_inv:
-        T_inv = sp.block_diag(diag_mats_inv, format='csr')
-    else:
-        T_inv = None
-
-    return T, T_inv
-
-
-def _ohe_spec_to_B(ohe_spec_str, alpha=4):
-    '''
-    input: ohe_spec
-    output: B (s.t. T x = x_factored)
-    '''
-    # Split ohe_spec into parts
-    parts = ohe_spec_str.split('+')
-
-    # Get maximum order
-    max_order = np.max([len(part.split('x')) for part in parts])
-
-    # Build blocks for order up to maximum order
-    I_triv = sp.eye(1, dtype=np.int64)
-    I_ohe = sp.eye(alpha, dtype=np.int64)
-
-    order_to_block_dict = {}
-    B_part = I_triv
-    B_part_inv = I_triv
-    for k in range(max_order + 1):
-        order_to_block_dict[k] = (B_part.copy(), B_part_inv.copy())
-
-        # Fix up row order
         m = alpha ** k
-        B_part = sp.kron(B_part, I_ohe)
-        B_part_inv = sp.kron(B_part_inv, I_ohe)
-
         i_vals = list(range(m * alpha))
         j_vals = [alpha * i for i in range(m)] + [
             i - m + 1 + (i - m) // (alpha - 1) for i in range(m, m * alpha)]
@@ -235,8 +243,8 @@ def _ohe_spec_to_B(ohe_spec_str, alpha=4):
         new_B = sp.coo_array((data, (i_vals, j_vals)),
                              shape=(alpha * m, alpha * m)).tocsr()
         # pdb.set_trace()
-        B_part = new_B @ B_part
-        B_part_inv = B_part_inv @ (new_B.T)
+        BU_part = new_B @ sp.kron(BU_part, U_ohe)
+        BU_part_inv = sp.kron(U_ohe_inv, BU_part_inv) @ (new_B.T)
 
     # Build block matrix
     diag_mats = []
@@ -246,14 +254,17 @@ def _ohe_spec_to_B(ohe_spec_str, alpha=4):
             order = 0
         else:
             order = len(part.split('x'))
-        B_part, B_part_inv = order_to_block_dict[order]
-        diag_mats.append(B_part)
-        diag_mats_inv.append(B_part_inv)
+        BU_part, BU_part_inv = order_to_block_dict[order]
+        diag_mats.append(BU_part)
+        diag_mats_inv.append(BU_part_inv)
 
-    B = sp.block_diag(diag_mats, format='csr')
-    B_inv = sp.block_diag(diag_mats_inv, format='csr')
+    BU = sp.block_diag(diag_mats, format='csr')
+    if compute_inv:
+        BU_inv = sp.block_diag(diag_mats_inv, format='csr')
+    else:
+        BU_inv = None
 
-    return B, B_inv
+    return BU, BU_inv
 
 
 def my_expand(x):
@@ -264,7 +275,7 @@ def my_expand(x):
         a = x[0]
         b = x[1:]
         b_exp = my_expand(b)
-        c = [[y]+z for y in a for z in b_exp]
+        c = [[y]+z for z in b_exp for y in a]
         return c
     else:
         return [x]
@@ -389,7 +400,7 @@ def get_x_to_test_thinning_matrix(sim_spec_str, alpha=4):
     return x_test
 
 
-def seq_to_desired_BTx(seq, sim_spec_str, alphabet='ACGT'):
+def seq_to_desired_BUx(seq, sim_spec_str, alphabet='ACGT'):
     '''
     inputs: seq, ohe_spec, alphabet
     returns: x, a one-hot encoding
@@ -413,7 +424,7 @@ def seq_to_desired_BTx(seq, sim_spec_str, alphabet='ACGT'):
                 pos = positions.pop(-1)
                 c = seq[pos]
                 x_l = char_to_sim_dict[c]
-                x_irr = np.kron(x_irr, x_l)
+                x_irr = np.kron(x_l, x_irr)
             x_components.append(x_irr)
 
     # Create x
@@ -495,7 +506,7 @@ def get_ohe_spec_str(L, n_order, n_adj=None):
 
     # TODO: Fix so that this call is not needed
     # Flip parts
-    spec_str = flip_parts_in_spec_str(spec_str)
+    #spec_str = flip_parts_in_spec_str(spec_str)
 
     return spec_str
 
@@ -572,17 +583,12 @@ def compute_T(ohe_spec,
 
     # Get transformation matrix
     if verbose:
-        print('_ohe_spec_to_U...')
+        print('_ohe_spec_to_BU...')
     t0 = time.perf_counter()
-    U, U_inv = _ohe_spec_to_T(ohe_spec, alpha=alpha, compute_inv=compute_T_inv)
-    timing_dict['_ohe_spec_to_U'] = time.perf_counter() - t0
-
-    # Get reordering matrix
-    if verbose:
-        print('_ohe_spec_to_B...')
-    t0 = time.perf_counter()
-    B, B_inv = _ohe_spec_to_B(ohe_spec, alpha=alpha)
-    timing_dict['_ohe_spec_to_B'] = time.perf_counter() - t0
+    BU, BU_inv = _ohe_spec_to_BU(ohe_spec,
+                                 alpha=alpha,
+                                 compute_inv=compute_T_inv)
+    timing_dict['_ohe_spec_to_BU'] = time.perf_counter() - t0
 
     # Get sim_spec
     if verbose:
@@ -609,14 +615,14 @@ def compute_T(ohe_spec,
     if verbose:
         print('T computation...')
     t0 = time.perf_counter()
-    T = D @ A @ B @ U
+    T = D @ A @ BU
     timing_dict["T computation"] = time.perf_counter() - t0
 
     if compute_T_inv:
         if verbose:
             print('T_inv computation...')
         t0 = time.perf_counter()
-        T_inv = U_inv @ B_inv @ A_inv @ D_inv
+        T_inv = BU_inv @ A_inv @ D_inv
         timing_dict["T_inv computation"] = time.perf_counter() - t0
     else:
         T_inv = None
@@ -627,10 +633,9 @@ def compute_T(ohe_spec,
     # Objects of interest:
     if verbose:
         obj_dict = {
-                     '      U':U,
-                     '  U_inv':U_inv,
+                     '     BU':BU,
+                     ' BU_inv':BU_inv,
                      '      A':A,
-                     '      B':B,
                      '      D':D,
                      '      T':T,
                      'G_basis':G_basis}
@@ -651,9 +656,8 @@ def compute_T(ohe_spec,
     info_dict['timing_dict'] = timing_dict
     info_dict['G_basis'] = G_basis
     info_dict['sparse_intermediates'] = {
-        'U':U,
         'A':A,
-        'B':B,
+       'BU':BU,
         'D':D
     }
 
@@ -671,3 +675,269 @@ def compute_T(ohe_spec,
     else:
         return T
 
+
+def test_distillation(seq,
+                      ohe_spec_str,
+                      alphabet,
+                      show_annotations=True,
+                      show_xticks=False,
+                      num_test_seqs=100,
+                      figsize=[10, 5]):
+
+    L = len(seq)
+    alpha = len(alphabet)
+    print(f'ohe_spec_str: {ohe_spec_str}')
+
+
+    # Get one-hot encoding of x
+    x_ohe = seq_to_x_ohe(seq, ohe_spec_str, alphabet=alphabet).todense()
+    print(f'x_ohe.shape: {x_ohe.shape}')
+    M = len(x_ohe)
+
+    # Get sim_spec
+    sim_spec_str = ohe_to_sim_spec(ohe_spec_str)
+    print(f'sim_spec_str: {sim_spec_str}')
+
+    # Get vector to test thinning matrix
+    x_test = get_x_to_test_thinning_matrix(sim_spec_str, alpha=alpha)
+    x_test = np.array(x_test).reshape([M,1])
+    print(f'x_test.shape: {x_test.shape}')
+
+    # Compute T
+    _, info_dict = compute_T(ohe_spec=ohe_spec_str,
+                             alpha=alpha,
+                             verbose=False)
+    T = info_dict['T']
+    T_inv = info_dict['T_inv']
+    sparse_intermediates_dict = info_dict['sparse_intermediates']
+    BU = sparse_intermediates_dict['BU']
+    #B = sparse_intermediates_dict['B']
+    A = sparse_intermediates_dict['A']
+    D = sparse_intermediates_dict['D']
+
+    for scalar_name in ['M', 'gamma']:
+        scalar = info_dict[scalar_name]
+        print(f'{scalar_name}: {scalar}')
+
+    # for mat_name in ['U', 'B', 'A', 'D']:
+    #     mat = info_dict['sparse_intermediates'][mat_name]
+    #     print(f'{mat_name}.shape: {mat.shape}')
+
+    M = info_dict['M']
+    gamma = info_dict['gamma']
+
+    # Make figure
+    fig, axs = plt.subplots(7, 1, figsize=[10, 7])
+
+    # Compute ohe vlines
+    parts = ohe_spec_str.split('+')
+    ohe_vlines = []
+    offset = 0
+    ohe_vlines.append(offset - .5)
+    for part in parts:
+        if part == '.':
+            m = 1
+        else:
+            num_poss = len(part.split('x'))
+            m = alpha ** (num_poss)
+        offset += m
+        ohe_vlines.append(offset - .5)
+
+    ohe_annotations = []
+    for part_num, part in enumerate(parts):
+        x = 0.5*(ohe_vlines[part_num] + ohe_vlines[part_num+1])
+        y = 0
+        ohe_annotations.append([part, x, y])
+
+    # Compute vline xs
+    sim_vlines = []
+    parts = sim_spec_str.split('+')
+    offset = 0
+    sim_vlines.append(offset - .5)
+    for part in parts:
+        if part == '.':
+            m = 1
+        else:
+            num_poss = len(part.split('x'))
+            m = (alpha - 1) ** (num_poss)
+        offset += m
+        sim_vlines.append(offset - .5)
+
+    sim_annotations = []
+    for part_num, part in enumerate(parts):
+        x = 0.5*(sim_vlines[part_num] + sim_vlines[part_num+1])
+        y = 0
+        sim_annotations.append([part, x, y])
+
+    # Compute dist vlines and annotations
+    dist_vlines = []
+    dist_annotations = []
+    part_set = set([])
+    offset = 0
+    dist_vlines.append(offset - .5)
+    for i, part in enumerate(parts):
+        if not part in part_set:
+            part_set.add(part)
+            if part == '.':
+                m = 1
+            else:
+                num_poss = len(part.split('x'))
+                m = (alpha - 1) ** (num_poss)
+            x = offset + 0.5*m - .5
+            y = 0
+            offset += m
+            dist_vlines.append(offset - .5)
+            dist_annotations.append([part, x, y])
+        else:
+            pass;
+    if offset < M:
+        x = offset + 0.5*gamma - .5
+        y = 0
+        dist_annotations.append(['zeros', x, y])
+        dist_vlines.append(M-.5)
+
+    test_style_dict = {'color':'k',
+                       'ha':'center',
+                       'va':'center',
+                       'rotation':90}
+
+    def show_vec(ax,
+                 vec,
+                 title,
+                 annotations,
+                 vlines,
+                 show_xticks=False,
+                 show_annotations=False):
+
+        # Show x_ohe
+        ax.matshow(np.mat(vec).T, vmin=-1, vmax=1, cmap='jet')
+        ax.set_yticks([])
+        ax.set_title(title)
+        ax.set_aspect('auto')
+        if show_xticks:
+            ax.set_xticks(range(M))
+            ax.set_xticklabels([])
+        else:
+            ax.set_xticks([])
+        for x in vlines:
+            ax.axvline(x, color='w')
+        if show_annotations:
+            for part, x, y in annotations:
+                ax.text(s=part, x=x, y=y, **test_style_dict)
+
+
+    # Show x_ohe
+    show_vec(ax=axs[0],
+             vec=x_ohe,
+             title='x_ohe',
+             annotations=ohe_annotations,
+             vlines=ohe_vlines,
+             show_xticks=False,
+             show_annotations=True)
+
+    show_vec(ax=axs[1],
+             vec=BU @ x_ohe,
+             title='BU @ x_ohe',
+             annotations=sim_annotations,
+             vlines=sim_vlines,
+             show_xticks=False,
+             show_annotations=True)
+
+    show_vec(ax=axs[2],
+             vec=x_test,
+             title='x_test',
+             annotations=sim_annotations,
+             vlines=sim_vlines,
+             show_xticks=False,
+             show_annotations=True)
+
+    show_vec(ax=axs[3],
+             vec=A @ BU @ x_ohe,
+             title='A @ BU @ x_ohe',
+             annotations=sim_annotations,
+             vlines=sim_vlines,
+             show_xticks=False,
+             show_annotations=True)
+
+    show_vec(ax=axs[4],
+             vec=A @ x_test,
+             title='A @ x_test',
+             annotations=sim_annotations,
+             vlines=sim_vlines,
+             show_xticks=False,
+             show_annotations=True)
+
+    show_vec(ax=axs[5],
+             vec=D @ A @ BU @ x_ohe,
+             title='D @ A @ BU @ x_one',
+             annotations=dist_annotations,
+             vlines=dist_vlines,
+             show_xticks=False,
+             show_annotations=True)
+
+    show_vec(ax=axs[6],
+             vec=D @ A @ x_test,
+             title='D @ A @ x_test',
+             annotations=dist_annotations,
+             vlines=dist_vlines,
+             show_xticks=False,
+             show_annotations=True)
+
+    fig.tight_layout()
+
+    info_dict['fig'] = fig
+    info_dict['axs'] = axs
+    info_dict['x_ohe'] = x_ohe
+    info_dict['x_test'] = x_test
+    info_dict['seq'] = seq
+    info_dict['alphabet'] = alphabet
+    info_dict['alpha'] = alpha
+    info_dict['ohe_spec_str'] = ohe_spec_str
+    info_dict['sim_spec_str'] = sim_spec_str
+
+    ### Test x_dist is as expected
+    all_seqs = make_random_seqs(L, num_seqs=num_test_seqs)
+    num_matches = 0
+    for seq in all_seqs:
+        x_ohe = seq_to_x_ohe(seq, ohe_spec_str, alphabet=alphabet).todense()
+        desired_BUx = np.array(
+            seq_to_desired_BUx(seq, sim_spec_str, alphabet=alphabet),
+            dtype=np.int64).reshape((M, 1))
+        match = np.all(BU @ x_ohe == desired_BUx)
+        if match:
+            num_matches += 1
+        else:
+            print(
+                f'mismatch for {seq}: BU@x_ohe=\n{(BU @ x_ohe).T};' \
+                f'\ndesired_BUx=\n{desired_BUx.T}')
+            break
+    print(f'BU@x_ohe == x_dist for {num_matches}/{len(all_seqs)} seqs')
+
+
+    ### Test that T and T_inv are inverses
+    print('T@T_inv == I:', np.allclose((T @ T_inv).todense(), np.eye(M)))
+
+
+    ### Check that gauge basis is perpendicular to ohe-encoded sequences
+
+    # Check that gauge basis is perpendicular to sequences
+    gauge_basis = T[(M - gamma):, :].T
+    if alpha**L < num_test_seqs:
+        seqs = make_all_seqs(L, alphabet=alphabet)
+    else:
+        seqs = make_random_seqs(L,
+                                num_seqs=num_test_seqs,
+                                alphabet=alphabet)
+    x_ohes = np.hstack(
+        [seq_to_x_ohe(seq, ohe_spec_str, alphabet=alphabet).todense() for seq
+         in seqs])
+    print(
+        f'All {gamma*num_test_seqs:,d} dot products between the ' +
+        f'{gamma:,d} gauge vectors and the {num_test_seqs} one-hot' +
+        f'encoded sequences are zero: ',
+        np.allclose((gauge_basis.T) @ x_ohes, 0))
+    print('Unique elements of gauge basis', np.unique(gauge_basis.data))
+
+
+
+    return info_dict
