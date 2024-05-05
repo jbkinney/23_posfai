@@ -825,7 +825,8 @@ def test_distillation(seq,
     print('T@T_inv == I:', np.allclose((T @ T_inv).todense(), np.eye(M)))
 
     # Check that gauge basis is perpendicular to ohe-encoded sequences
-    gauge_basis = T[(M - gamma):, :].T
+    #gauge_basis = T[(M - gamma):, :].T
+    gauge_basis = info_dict['G_basis']
     if alpha ** L < num_test_seqs:
         seqs = make_all_seqs(L, alphabet=alphabet)
     else:
@@ -837,7 +838,7 @@ def test_distillation(seq,
          in seqs])
     print(
         f'All {gamma * num_test_seqs:,d} dot products between the ' +
-        f'{gamma:,d} gauge vectors and the {num_test_seqs} one-hot' +
+        f'{gamma:,d} gauge vectors and the {num_test_seqs} one-hot ' +
         f'encoded sequences are zero: ',
         np.allclose((gauge_basis.T) @ x_ohes, 0))
     print('Unique elements of gauge basis', np.unique(gauge_basis.data))
