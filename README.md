@@ -1,1 +1,5 @@
 # 23_posfai
+
+Analysis code for two manuscripts:
+- A Posfai, J Zhou, DM McCandlish, JB Kinney. Gauge fixing for sequence-function relationships. bioRxiv doi:10.1101/2024.05.12.593772 (2024).
+- A Posfai, DM McCandlish, JB Kinney. Symmetry, gauge freedoms, and the interpretability of sequence-function relationships. bioRxiv doi:10.1101/2024.05.12.593774 (2024).
